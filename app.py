@@ -5,35 +5,35 @@ import sqlite3
 app = Flask(__name__)
 CORS(app)
 
-DB_NAME = "dicemint.db"
-
+# Initialize SQLite DB
 def init_db():
-    with sqlite3.connect(DB_NAME) as conn:
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS balances (
+    conn = sqlite3.connect("dice.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
             telegram_id TEXT PRIMARY KEY,
             balance INTEGER DEFAULT 0
-        )''')
-        c.execute('''CREATE TABLE IF NOT EXISTS referrals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            referrer_id TEXT,
-            new_user_id TEXT
-        )''')
-        conn.commit()
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_db()
 
 @app.route("/")
 def home():
-    return "✅ DiceMint Backend with SQLite is Live!"
+    return "✅ DiceMint SQLite Backend is Live!"
 
 @app.route("/get_balance", methods=["POST"])
 def get_balance():
     data = request.get_json()
     telegram_id = str(data.get("telegram_id"))
-    with sqlite3.connect(DB_NAME) as conn:
-        c = conn.cursor()
-        c.execute("SELECT balance FROM balances WHERE telegram_id = ?", (telegram_id,))
-        row = c.fetchone()
-        balance = row[0] if row else 0
+    conn = sqlite3.connect("dice.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT balance FROM users WHERE telegram_id = ?", (telegram_id,))
+    row = cursor.fetchone()
+    conn.close()
+    balance = row[0] if row else 0
     return jsonify({"balance": balance})
 
 @app.route("/update_balance", methods=["POST"])
@@ -41,28 +41,20 @@ def update_balance():
     data = request.get_json()
     telegram_id = str(data.get("telegram_id"))
     balance = int(data.get("balance", 0))
-    with sqlite3.connect(DB_NAME) as conn:
-        c = conn.cursor()
-        c.execute("INSERT OR REPLACE INTO balances (telegram_id, balance) VALUES (?, ?)", (telegram_id, balance))
-        conn.commit()
-    return jsonify({"success": True, "new_balance": balance})
 
-@app.route("/claim_bonus", methods=["POST"])
-def claim_bonus():
-    data = request.get_json()
-    telegram_id = str(data.get("telegram_id"))
-    with sqlite3.connect(DB_NAME) as conn:
-        c = conn.cursor()
-        c.execute("SELECT balance FROM balances WHERE telegram_id = ?", (telegram_id,))
-        row = c.fetchone()
-        if row:
-            bonus = 1000
-            new_balance = row[0] + bonus
-            c.execute("UPDATE balances SET balance = ? WHERE telegram_id = ?", (new_balance, telegram_id))
-            conn.commit()
-            return jsonify({"success": True, "new_balance": new_balance})
-        else:
-            return jsonify({"success": False, "message": "User not found"}), 404
+    conn = sqlite3.connect("dice.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT balance FROM users WHERE telegram_id = ?", (telegram_id,))
+    row = cursor.fetchone()
+
+    if row:
+        cursor.execute("UPDATE users SET balance = ? WHERE telegram_id = ?", (balance, telegram_id))
+    else:
+        cursor.execute("INSERT INTO users (telegram_id, balance) VALUES (?, ?)", (telegram_id, balance))
+
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "new_balance": balance})
 
 @app.route("/api/referral", methods=["POST"])
 def referral():
@@ -73,28 +65,36 @@ def referral():
     if new_user_id == referrer_id:
         return jsonify({"status": "error", "message": "Self-referral is not allowed"}), 400
 
-    with sqlite3.connect(DB_NAME) as conn:
-        c = conn.cursor()
-        # Check if new user already exists
-        c.execute("SELECT 1 FROM balances WHERE telegram_id = ?", (new_user_id,))
-        if c.fetchone():
-            return jsonify({"status": "skipped", "message": "User already registered"}), 200
+    conn = sqlite3.connect("dice.db")
+    cursor = conn.cursor()
 
-        # Add new user
-        c.execute("INSERT INTO balances (telegram_id, balance) VALUES (?, ?)", (new_user_id, 0))
+    cursor.execute("SELECT balance FROM users WHERE telegram_id = ?", (new_user_id,))
+    if cursor.fetchone():
+        conn.close()
+        return jsonify({"status": "skipped", "message": "User already registered"}), 200
 
-        # Log referral
-        c.execute("INSERT INTO referrals (referrer_id, new_user_id) VALUES (?, ?)", (referrer_id, new_user_id))
+    cursor.execute("INSERT INTO users (telegram_id, balance) VALUES (?, ?)", (new_user_id, 0))
 
-        # Update referrer's balance
-        c.execute("SELECT balance FROM balances WHERE telegram_id = ?", (referrer_id,))
-        row = c.fetchone()
-        new_balance = (row[0] if row else 0) + 500
-        c.execute("INSERT OR REPLACE INTO balances (telegram_id, balance) VALUES (?, ?)", (referrer_id, new_balance))
+    cursor.execute("SELECT balance FROM users WHERE telegram_id = ?", (referrer_id,))
+    row = cursor.fetchone()
+    ref_balance = row[0] if row else 0
+    ref_balance += 500
 
-        conn.commit()
-    return jsonify({"status": "success", "message": "Referral bonus added"}), 200
+    cursor.execute("INSERT OR REPLACE INTO users (telegram_id, balance) VALUES (?, ?)", (referrer_id, ref_balance))
+
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Referral successful"}), 200
+
+# ✅ Route to view all user balances
+@app.route("/all_users", methods=["GET"])
+def all_users():
+    conn = sqlite3.connect("dice.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT telegram_id, balance FROM users")
+    users = cursor.fetchall()
+    conn.close()
+    return jsonify(users)
 
 if __name__ == "__main__":
-    init_db()
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=True)
