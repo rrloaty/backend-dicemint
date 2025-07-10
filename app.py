@@ -5,9 +5,9 @@ from tinydb import TinyDB, Query
 app = Flask(__name__)
 CORS(app)
 
-db = TinyDB("db.json")
-balances = db.table("balances")
-referrals = db.table("referrals")
+db = TinyDB('db.json')
+balances = db.table('balances')
+referrals = db.table('referrals')
 
 @app.route("/")
 def home():
@@ -31,21 +31,6 @@ def update_balance():
     else:
         balances.insert({"telegram_id": telegram_id, "balance": balance})
     return jsonify({"success": True, "new_balance": balance})
-
-@app.route("/claim_bonus", methods=["POST"])
-def claim_bonus():
-    data = request.get_json()
-    telegram_id = str(data.get("telegram_id"))
-    if referrals.contains(Query().telegram_id == telegram_id):
-        return jsonify({"success": False, "message": "Already claimed"})
-    user = balances.get(Query().telegram_id == telegram_id)
-    if user:
-        new_balance = user["balance"] + 1000
-        balances.update({"balance": new_balance}, Query().telegram_id == telegram_id)
-    else:
-        balances.insert({"telegram_id": telegram_id, "balance": 1000})
-    referrals.insert({"telegram_id": telegram_id})
-    return jsonify({"success": True})
 
 @app.route("/api/referral", methods=["POST"])
 def referral():
@@ -72,4 +57,4 @@ def referral():
     return jsonify({"status": "success", "message": "Referral successful"}), 200
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=10000)
