@@ -1,3 +1,2 @@
 flask
 flask-cors
-sqlite3  # May not be needed as it's part of standard Python, but include for clarity
