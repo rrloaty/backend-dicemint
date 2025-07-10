@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: dicemint-backend
-    env: python
-    buildCommand: ""
-    startCommand: python app.py
-    plan: free
-    region: oregon
